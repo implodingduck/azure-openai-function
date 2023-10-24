@@ -33,7 +33,6 @@ openai.api_base = os.environ.get("API_BASE")
 openai.api_version = "2023-05-15"
 engine = os.environ.get("ENGINE")
 
-#@tracer.start_as_current_span("openai-function")
 def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
     logging.info(f"Invocation id: {context.invocation_id}")
