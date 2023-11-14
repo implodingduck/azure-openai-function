@@ -11,6 +11,10 @@ from azure.monitor.opentelemetry import configure_azure_monitor
 from opentelemetry import trace
 from opentelemetry import metrics
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+import tiktoken
+import time
+from starlette.responses import StreamingResponse
+import asyncio
 
 configure_azure_monitor(
     connection_string=os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"),
@@ -33,7 +37,35 @@ openai.api_base = os.environ.get("API_BASE")
 openai.api_version = "2023-05-15"
 engine = os.environ.get("ENGINE")
 
-def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
+async def get_streamingresponse_openai(prompt: str):
+    response = openai.ChatCompletion.create(
+        engine=engine,
+        n=1,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0,
+        stream=True,
+        messages=[
+            {"role": "system", "content": 'You are an AI assistant that helps people find information about "Star Wars".\n\nInstructions\n- only answer questions related to Star Wars\n- If an answer is not related to Star Wars, respond with "This is not the AI you are looking for..."'},
+            {"role": "user", "content": prompt},
+        ],
+    )
+
+    total_content = ""
+    for chunk in response:
+        logging.info(chunk)
+        choice_content = chunk["choices"][0]["delta"].get("content", "")
+        logging.info(choice_content)
+        total_content += choice_content
+        yield choice_content
+
+    encoding = tiktoken.get_encoding("cl100k_base")
+    num_tokens = len(encoding.encode(total_content))
+    token_counter.add(num_tokens, { "function": os.environ.get("OTEL_SERVICE_NAME"), "operation_id": operation_id, "streaming": "true" })
+    track_event("openai-tokens", {"function": os.environ.get("OTEL_SERVICE_NAME"), "total_tokens": num_tokens, "operation_id": operation_id , "streaming": "true"})
+    logging.info(num_tokens)
+
+async def main(req: func.HttpRequest, context: func.Context):
     logging.info('Python HTTP trigger function processed a request.')
     logging.info(f"Invocation id: {context.invocation_id}")
     logging.info(f"function name: {context.function_name}")
@@ -60,25 +92,11 @@ def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
 
 
         
-        response = openai.ChatCompletion.create(
-            engine=engine,
-            n=1,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0,
-            messages=[
-                {"role": "system", "content": 'You are an AI assistant that helps people find information about "Star Wars".\n\nInstructions\n- only answer questions related to Star Wars\n- If an answer is not related to Star Wars, respond with "This is not the AI you are looking for..."'},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        return func.HttpResponse(get_streamingresponse_openai(user_prompt))
+        
 
-        logging.info(f"{list(req.headers.keys())}")
-        for key in req.headers.keys():
-            logging.info(f"{key}: {req.headers[key]}")
-        logging.info(f"{req.headers}")
-        logging.info(response)
+       
 
-        token_counter.add(response["usage"]["total_tokens"], { "function": os.environ.get("OTEL_SERVICE_NAME"), "operation_id": operation_id, "streaming": "false" })
-        track_event("openai-tokens", {"function": os.environ.get("OTEL_SERVICE_NAME"), "total_tokens": response["usage"]["total_tokens"], "operation_id": operation_id , "streaming": "false"})
-        return func.HttpResponse(response["choices"][0]["message"]["content"])
+
+        
    

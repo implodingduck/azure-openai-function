@@ -5,3 +5,6 @@ azure-identity
 openai
 azure-monitor-opentelemetry
 azure-monitor-events-extension
+tiktoken
+urllib3
+starlette

@@ -64,12 +64,12 @@ resource "azurerm_application_insights" "app" {
 }
 
 resource "azurerm_storage_account" "sa" {
-  name                     = "sa${local.func_name}"
-  resource_group_name      = azurerm_resource_group.rg.name
-  location                 = azurerm_resource_group.rg.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-
+  name                            = "sa${local.func_name}"
+  resource_group_name             = azurerm_resource_group.rg.name
+  location                        = azurerm_resource_group.rg.location
+  account_tier                    = "Standard"
+  account_replication_type        = "LRS"
+  allow_nested_items_to_be_public = false
   tags = local.tags
 }
 
@@ -99,6 +99,9 @@ resource "azurerm_linux_function_app" "func" {
   }
   identity {
     type         = "SystemAssigned"
+  }
+  lifecycle {
+    ignore_changes = [ "tags" ]
   }
 }
 
