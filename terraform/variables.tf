@@ -20,4 +20,8 @@ variable "openai-rg" {
 variable "openai-account" {
   type = string
 }
-  
+
+variable "apim-key" {
+  type = string
+  default = ""
+}

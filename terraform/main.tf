@@ -91,17 +91,18 @@ resource "azurerm_linux_function_app" "func" {
     }
   }
   app_settings = {
-    "SCM_DO_BUILD_DURING_DEPLOYMENT" = "1"
-    "API_BASE"                       = var.openai-base
-    "ENGINE"                         = var.openai-engine
-    "OTEL_SERVICE_NAME"              = local.func_name
-    "OTEL_PROPAGATORS"               = "tracecontext,baggage"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT"     = "1"
+    "API_BASE"                           = var.openai-base
+    "ENGINE"                             = var.openai-engine
+    "APIM_KEY"                           = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.apim.versionless_id})"
+    "PYTHON_ISOLATE_WORKER_DEPENDENCIES" = "1"
+    "PYTHON_ENABLE_INIT_INDEXING"        = "1"
   }
   identity {
     type         = "SystemAssigned"
   }
   lifecycle {
-    ignore_changes = [ "tags" ]
+    ignore_changes = [ tags ]
   }
 }
 
@@ -141,3 +142,35 @@ resource "azurerm_role_assignment" "openai" {
   role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_linux_function_app.func.identity[0].principal_id
 }
+
+resource "azurerm_role_assignment" "kv" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azurerm_linux_function_app.func.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "kvtf" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+
+resource "azurerm_key_vault" "this" {
+  name                      = "kv-${local.func_name}"
+  resource_group_name       = azurerm_resource_group.rg.name
+  location                  = azurerm_resource_group.rg.location
+  sku_name                  = "standard"
+  tenant_id                 = data.azurerm_client_config.current.tenant_id
+  enable_rbac_authorization = true
+
+  tags = local.tags
+}
+
+
+resource "azurerm_key_vault_secret" "apim" {
+  depends_on = [ azurerm_role_assignment.kvtf ]
+  name         = "apimkey"
+  value        = var.apim-key
+  key_vault_id = azurerm_key_vault.this.id
+} 

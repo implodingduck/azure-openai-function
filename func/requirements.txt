@@ -2,9 +2,14 @@
 
 azure-functions
 azure-identity
-openai
-azure-monitor-opentelemetry
-azure-monitor-events-extension
-tiktoken
-urllib3
-starlette
+openai==1.30.2
+azurefunctions-extensions-http-fastapi
+# azure-monitor-opentelemetry
+# azure-monitor-events-extension
+# tiktoken
+# urllib3
+# fastapi
+# opentelemetry-instrumentation-fastapi
+# opentelemetry-instrumentation-asgi
+# azure-core-tracing-opentelemetry
+# azure-monitor-opentelemetry-exporter
