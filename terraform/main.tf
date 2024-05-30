@@ -91,12 +91,15 @@ resource "azurerm_linux_function_app" "func" {
     }
   }
   app_settings = {
-    "SCM_DO_BUILD_DURING_DEPLOYMENT"     = "1"
-    "API_BASE"                           = var.openai-base
-    "ENGINE"                             = var.openai-engine
-    "APIM_KEY"                           = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.apim.versionless_id})"
-    "PYTHON_ISOLATE_WORKER_DEPENDENCIES" = "1"
-    "PYTHON_ENABLE_INIT_INDEXING"        = "1"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT"             = "1"
+    "API_BASE"                                   = var.openai-base
+    "ENGINE"                                     = var.openai-engine
+    "APIM_KEY"                                   = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.apim.versionless_id})"
+    "PYTHON_ISOLATE_WORKER_DEPENDENCIES"         = "1"
+    "PYTHON_ENABLE_INIT_INDEXING"                = "1"
+    "ApplicationInsightsAgent_EXTENSION_VERSION" = "~3"
+    "OTEL_SERVICE_NAME"                          = local.func_name
+    
   }
   identity {
     type         = "SystemAssigned"

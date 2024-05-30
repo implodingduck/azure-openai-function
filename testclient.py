@@ -28,6 +28,7 @@ if args.output > 0:
     print(f"Trying: {url}")
 response = requests.get(
     url,
+    stream=args.stream,
     headers={"accept": "application/json"},
 )
 

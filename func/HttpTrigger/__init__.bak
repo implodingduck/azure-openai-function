@@ -1,0 +1,180 @@
+import logging
+import os
+import azure.functions as func
+from azure.identity import DefaultAzureCredential
+import openai
+import json
+from opentelemetry.sdk.trace import TracerProvider
+
+from azure.monitor.events.extension import track_event
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry import trace
+from opentelemetry import metrics
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+configure_azure_monitor(
+    connection_string=os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"),
+)
+
+trace.set_tracer_provider(TracerProvider())
+tracer = trace.get_tracer(__name__)
+
+meter = metrics.get_meter_provider().get_meter("openaifunction")
+token_counter = meter.create_counter("openaitokens")
+
+# Request credential
+default_credential = DefaultAzureCredential()
+token = default_credential.get_token("https://cognitiveservices.azure.com/.default")
+
+# Setup parameters
+
+apim_key = os.environ.get("APIM_KEY", "")
+if len(apim_key) > 0:
+    openai.api_type = "azure"
+    openai.api_key = apim_key
+    openai.api_base = os.environ.get("API_BASE")
+else:
+    openai.api_type = "azure_ad"
+    openai.api_key = token.token
+    openai.api_base = os.environ.get("API_BASE")
+openai.api_version = "2023-05-15"
+engine = os.environ.get("ENGINE")
+
+
+def handleStreaming(response):
+    for chunk in response:
+        choice_content = chunk["choices"][0]["delta"].get("content", "")
+        current_content = choice_content
+        yield current_content
+
+def main(req: func.HttpRequest, context: func.Context) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+    logging.info(f"Invocation id: {context.invocation_id}")
+    logging.info(f"function name: {context.function_name}")
+    logging.info(f"context: {context}")
+    logging.info(f"trace context: {context.trace_context}")
+    logging.info(f"trace parent: {context.trace_context.Traceparent}")
+    logging.info(f"trace state: {context.trace_context.Tracestate}")
+    logging.info(f"Using OpenAI API BASE: {openai.api_base}")
+    logging.info(f"Using OpenAI API TYPE: {openai.api_type}")
+    logging.info(f"Using OpenAI API VERSION: {openai.api_version}")
+    logging.info(f"Using OpenAI ENGINE: {engine}")
+    operation_id = context.trace_context.Traceparent.split("-")[1]
+    w3c_trace_context = { "traceparent": context.trace_context.Traceparent }
+    ctx = TraceContextTextMapPropagator().extract(carrier=w3c_trace_context)
+    with tracer.start_as_current_span("openai-function", context=ctx):
+        question = req.params.get('question')
+        if not question:
+            try:
+                req_body = req.get_json()
+            except ValueError:
+                pass
+            else:
+                question = req_body.get('question')
+
+        stream = req.params.get('stream')
+        if not stream:
+            try:
+                req_body = req.get_json()
+            except ValueError:
+                pass
+            else:
+                stream = req_body.get('stream')
+        is_streaming = False 
+        if stream and stream != "0":
+            is_streaming = True
+        logging.info(f"Using OpenAI STREAM: {is_streaming}")
+
+        #user_prompt = "Geckos and Guinea pigs"
+        user_prompt = "Generate two tragic backstories for the player to pick from and give them background titles"
+        if question:
+            user_prompt = question
+
+
+        
+        # response = openai.ChatCompletion.create(
+        #     engine=engine,
+        #     n=1,
+        #     top_p=1,
+        #     frequency_penalty=0,
+        #     presence_penalty=0,
+        #     messages=[
+        #         {"role": "system", "content": 'You are a creative director for a gaming company. Create a concept for a new game based on the user\'s prompt.\n* Include a description of the game that can be used on a store page\n* Include lore about the world.\n* Include a tragic back story for the characters. \n* Include a unique game mechanics\n* Include concept descriptions that can be used by artists and level designers\n* Describe a trailer to showcase the game to consumers\n* Include a marketing campaign\n* Include any spinoff potentials'},
+        #         {"role": "user", "content": user_prompt},
+        #     ],
+        # )
+            
+
+        response = openai.ChatCompletion.create(
+            engine=engine,
+            n=1,
+            top_p=1,
+            frequency_penalty=0,
+            presence_penalty=0,
+            stream=is_streaming,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a creative director for a gaming company. Create a concept for a new game based on the user's prompt."
+                },
+                {
+                    "role": "user",
+                    "content": "Generate a cast of Enchanters that help the player along as the story progresses"
+                },
+                {
+                    "role": "assistant",
+                    "content": "Sure, here are some Enchanters that players will encounter as they progress through the story:\n\n1. Eryndor - The leader of the Enchanters. He is wise and powerful, but also somewhat aloof and mysterious. He is the one who sends players on their quest to restore the magic.\n\n2. Valtara - A fierce warrior who specializes in combat magic. She is strong-willed and determined, but also fiercely loyal to her fellow Enchanters and to the cause.\n\n3. Faelin - A gentle soul who specializes in healing magic. She is kind and compassionate, always looking for ways to help others. She is also very wise and often serves as a mentor to younger Enchanters.\n\n4. Theron - A mischievous Enchanter who specializes in illusion magic. He is always looking for ways to have fun and enjoys playing pranks on his fellow Enchanters, but he also takes his responsibilities seriously.\n\n5. Kaela - A quiet and reserved Enchanter who specializes in elemental magic. She is fiercely independent and prefers to work alone, but she is also incredibly skilled and powerful.\n\n6. Alaric - A gruff and no-nonsense Enchanter who specializes in enchanting magical items. He is a bit rough around the edges, but he is also fiercely loyal to the cause and will do whatever it takes to help the players on their quest.\n\nEach Enchanter has their own unique personality and set of skills, and players will need to work with them all to restore the magic to the realm. As players progress through the game, they'll also learn more about the Enchanters' pasts and their reasons for joining the quest."
+                },
+                {
+                    "role": "user",
+                    "content": "Describe the unique gameplay mechanics of the game"
+                },
+                {
+                    "role": "assistant",
+                    "content": "\"The Realm of Enchantment\" has several unique gameplay mechanics that set it apart from other open-world survival games:\n\n1. Magic system - Players must collect magical energy from the environment and use it to cast spells. There are several different types of spells, including combat spells, healing spells, and utility spells, each with their own unique effects and requirements.\n\n2. Cooperative play - While players can explore the world on their own, they are encouraged to team up with other players to tackle more challenging quests and battles. The game also features a robust trading and crafting system that allows players to work together to create powerful magical items.\n\n3. Dynamic weather and environment - The game features a dynamic weather system that affects gameplay in real-time. For example, rainy weather might make it more difficult to start a fire, while a snowstorm might make it harder to see and move around.\n\n4. Biomes and creatures - The game features several different biomes, each with its own unique creatures and challenges. Players must adapt their strategies and playstyles to survive in each environment.\n\n5. Base building and customization - Players can build their own shelters and customize them with different materials and magical decorations. The game also allows players to grow and harvest their own magical plants, which can be used for crafting and spellcasting.\n\n6. Quest system - The game features a robust quest system that guides players through the story and introduces them to new characters and challenges. Players can also create their own quests and share them with other players.\n\nOverall, \"The Realm of Enchantment\" offers a rich and immersive gameplay experience that combines survival mechanics with cooperative play and a deep magic system."
+                },
+                {
+                    "role": "user",
+                    "content": "Generate a store summary page"
+                },
+                {
+                    "role": "assistant",
+                    "content": "Sure, here's a summary page for \"The Realm of Enchantment\":\n\nTitle: The Realm of Enchantment\n\nGenre: Cooperative Fantasy Open-World Survival Game with Magic\n\nDescription: Explore a mystical realm filled with wonder and danger in \"The Realm of Enchantment.\" Build your own shelter, gather resources, and craft powerful spells to survive against the threats that lurk in the shadows. Join forces with other players to form powerful alliances and tackle even greater challenges. Discover hidden artifacts and ancient texts that will help you on your quest to restore the magic to the realm. Will you be able to defeat the evil wizard Malakar and restore balance to the land?\n\nKey Features:\n- Cooperative play: Team up with other players to survive against the threats of the realm\n- Magic system: Collect magical energy and cast spells to protect yourself and your allies\n- Dynamic weather and environment: Adapt to changing weather and environments to survive\n- Biomes and creatures: Explore different biomes and encounter unique creatures and challenges\n- Base building and customization: Build your own shelter and customize it with magical decorations\n- Quest system: Follow the story and complete quests to progress through the game\n\nPrice: $59.99\n\nPlatform: PC\n\nTarget Audience: Fans of open-world survival games, cooperative play, and fantasy settings.\n\nRating: E for Everyone\n\nLanguages: English\n\nRelease Date: TBD"
+                },
+                {
+                    "role": "user",
+                    "content": "reduce the price to $20"
+                },
+                {
+                    "role": "assistant",
+                    "content": "Sure, here's a revised summary page with a reduced price of $20:\n\nTitle: The Realm of Enchantment\n\nGenre: Cooperative Fantasy Open-World Survival Game with Magic\n\nDescription: Explore a mystical realm filled with wonder and danger in \"The Realm of Enchantment.\" Build your own shelter, gather resources, and craft powerful spells to survive against the threats that lurk in the shadows. Join forces with other players to form powerful alliances and tackle even greater challenges. Discover hidden artifacts and ancient texts that will help you on your quest to restore the magic to the realm. Will you be able to defeat the evil wizard Malakar and restore balance to the land?\n\nKey Features:\n- Cooperative play: Team up with other players to survive against the threats of the realm\n- Magic system: Collect magical energy and cast spells to protect yourself and your allies\n- Dynamic weather and environment: Adapt to changing weather and environments to survive\n- Biomes and creatures: Explore different biomes and encounter unique creatures and challenges\n- Base building and customization: Build your own shelter and customize it with magical decorations\n- Quest system: Follow the story and complete quests to progress through the game\n\nPrice: $20\n\nPlatform: PC\n\nTarget Audience: Fans of open-world survival games, cooperative play, and fantasy settings.\n\nRating: E for Everyone\n\nLanguages: English\n\nRelease Date: TBD"
+                },
+                {
+                    "role": "user",
+                    "content": "Generate a story board for a trailer to hype players up around the game"
+                },
+                {
+                    "role": "assistant",
+                    "content": "Sure, here's a storyboard for a trailer for \"The Realm of Enchantment\":\n\nOpening shot: A wide shot of a mystical forest, with shafts of sunlight filtering through the trees. We hear the sound of birds chirping and wind rustling through the leaves.\n\nCut to: A close-up of a player character, casting a spell. We see a burst of magical energy as the spell takes effect.\n\nCut to: A group of players, working together to fend off a pack of wolves. One player uses a bow and arrow to shoot at the wolves, while another casts a fireball spell.\n\nCut to: A player exploring a dungeon, using a torch to light their way. We see shadows moving in the darkness and hear the sound of creatures lurking in the shadows.\n\nCut to: A player building their own shelter, using magical materials to create a cozy and inviting home.\n\nCut to: A group of players gathering around a campfire, sharing stories and planning their next adventure.\n\nCut to: The evil wizard Malakar, standing atop a mountain and casting a dark spell. We see the sky turning red and the ground shaking beneath him.\n\nCut to: A group of Enchanters, led by Eryndor, discussing their plans to stop Malakar and restore the magic to the realm.\n\nClosing shot: A wide shot of the mystical forest again, with a voiceover saying \"Join the adventure and restore the magic to the realm. The Realm of Enchantment - coming soon.\"\n\nThe trailer should convey a sense of wonder, danger, and adventure, highlighting the game's key features like cooperative play, magic system, dynamic weather and environment, biomes and creatures, base building and customization, and quest system. It should also build up excitement for the game's main quest to stop the evil wizard Malakar and restore balance to the land."
+                },
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+
+        if is_streaming:
+            myresp = "Streamed... "
+            content = handleStreaming(response)
+            for chunk in content:
+                myresp += chunk
+            return func.HttpResponse(myresp)
+        else: 
+            logging.info(f"{list(req.headers.keys())}")
+            for key in req.headers.keys():
+                logging.info(f"{key}: {req.headers[key]}")
+            logging.info(f"{req.headers}")
+            logging.info(response)
+
+            token_counter.add(response["usage"]["total_tokens"], { "function": os.environ.get("OTEL_SERVICE_NAME"), "operation_id": operation_id, "streaming": "false" })
+            track_event("openai-tokens", {"function": os.environ.get("OTEL_SERVICE_NAME"), "total_tokens": response["usage"]["total_tokens"], "operation_id": operation_id , "streaming": "false"})
+            return func.HttpResponse(response["choices"][0]["message"]["content"])
+   
