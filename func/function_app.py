@@ -20,7 +20,8 @@ meter = metrics.get_meter_provider().get_meter("openaifunction")
 token_counter = meter.create_counter("openaitokens")
 
 # Azure Function App
-app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+#app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+app = func.FunctionApp()
 
 
 @app.function_name(name="HttpTrigger1")
@@ -121,3 +122,10 @@ async def stream_openai_text(req: Request, context: func.Context) -> Response:
         track_event("openai-tokens", {"function": os.environ.get("OTEL_SERVICE_NAME"), "total_tokens": total_tokens, "operation_id": operation_id , "streaming": "false"})
 
         return Response(azure_open_ai_response.to_json(), media_type="application/json")
+
+@app.function_name(name="listenv")
+@app.route(route="listenv", methods=[func.HttpMethod.GET])
+async def list_env(req: Request, context: func.Context) -> Response:
+    env_vars = os.environ
+    return Response(str(env_vars), media_type="text/plain")
+

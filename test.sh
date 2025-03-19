@@ -1,1 +1,2 @@
-python testclient.py --id 0 --stream 1 --output 1
+source .env
+python testclient.py --id 0 --stream 0 --output 1

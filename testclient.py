@@ -21,8 +21,12 @@ function_name = os.environ.get("FUNCTION_NAME")
 
 #url = f"https://{function_name}.azurewebsites.net/api/HttpTrigger/?code={function_key}&question=&stream={args.stream}&tracking={args.id}"
 #url = f"https://{function_name}.azurewebsites.net/openaistreaming/?code={function_key}&question=What is the history of the force?"
-url = f"https://{function_name}.azurewebsites.net/stream-cities/?code={function_key}"
 
+if args.stream > 0:
+    url = f"https://{function_name}.azurewebsites.net/stream-cities/?code={function_key}"
+else:
+    url = f"https://{function_name}.azurewebsites.net/cities/?code={function_key}"
+    
 
 if args.output > 0:
     print(f"Trying: {url}")
@@ -33,7 +37,7 @@ response = requests.get(
 )
 
 if args.output > 0:
-    #print(response)
+    print(response.status_code)
     #print(response.headers)
     #print(response.content)
     for chunk in response.iter_content(chunk_size=1024):
